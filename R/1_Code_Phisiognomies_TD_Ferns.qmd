@@ -1,0 +1,312 @@
+---
+title: R Code for Drivers of terrestrial ferns’ taxonomic diversity and species composition across Subtropical Atlantic Forest physiognomies - Physiognomies taxonomic diversity and composition (Question 1)
+author: Denilson da Silva Machado
+date: "`r Sys.Date()`"
+bibliography: /home/denilsonmachado/Bibliografia/library.bib # Bibliografia para citações
+fontsize: 12pt           # Tamanho da fonte para PDF/Word
+geometry: a4paper        # Formato de papel para PDF
+output-file: output.pdf  # Nome do arquivo gerado
+lang: "pt-BR"            # Idioma do documento
+---
+
+# Packages required
+
+```{r}
+#| message: false
+#| warning: false
+library(here)
+library(jtools)
+library(vegan)
+library(adiv)
+library(SYNCSA)
+library(reshape2)
+library(readxl)
+library(tidyverse)
+library(patchwork)
+library(ggord)
+library(DHARMa)
+library(iNEXT)
+library(ade4)
+```
+
+# Loading data
+
+```{r}
+e_matrix <- read_xlsx(here("data/data_ferns.xlsx"), sheet = "e_matrix") %>%
+  arrange(site)
+
+w_matrix <- read_xlsx(here("data/data_ferns.xlsx"), sheet = "w_matrix") |>
+  filter(site %in% e_matrix$site) %>%
+  arrange(site) |>
+  acast(formula = site ~ taxa, value.var = "FA_New", sum)
+
+
+coords <- data.frame(x = e_matrix$Long, y = e_matrix$Lat) %>%
+  `rownames<-`(e_matrix$site)
+
+my_palette = c("#75C165", "#A96C00", "#B0F4FA", "#8B0069")
+```
+
+# INEXT
+
+```{r}
+#| warning: false
+## Creating INEXT Curves at regional scale
+w <- read_xlsx(here("data/data_ferns.xlsx"), sheet = "w_matrix") %>%
+  dcast(formula = site ~ taxa, value.var = "FA_New", sum)
+
+e <- cbind.data.frame(site = e_matrix$site, Flot_type = e_matrix$Flo_type)
+a <- merge.data.frame(e, w, by = "site", sort = F)
+w_split <- split.data.frame(a, ~ a$Flot_type)
+w_split[[1]][1:5, 1:5]
+
+# Applying function to summary species incidence
+col1 <- lapply(w_split, FUN = function(x) {
+  a <- ifelse(x[c(-1, -2)] > 0, 1, 0)
+  b <- apply(a, 2, sum)
+  n <- append(b, nrow(x))
+  c <- sort(n, decreasing = T)
+  return(c)
+})
+
+# Removing zeros
+curve_1 <- lapply(col1, function(x) x[!x == 0])
+
+# Elaborating curves with 999 bootstrap
+out0 <- iNEXT(
+  curve_1,
+  q = 0,
+  datatype = "incidence_freq",
+  conf = .95,
+  nboot = 999
+)
+out1 <- iNEXT(
+  curve_1,
+  q = 2,
+  datatype = "incidence_freq",
+  conf = .95,
+  nboot = 999
+)
+
+out0$DataInfo
+out0$AsyEst
+out1$DataInfo
+out1$AsyEst
+```
+
+## INEXT Plots
+
+```{r}
+# Richness curve (q=0)
+p1 <- ggiNEXT(
+  out0,
+  type = 1,
+  facet.var = "Order.q",
+  color.var = "Assemblage",
+  grey = F
+) +
+  theme_bw(base_size = 8) +
+  theme(axis.line = element_line(color = "black")) +
+  labs(x = "Number of Sites", y = "Richness (q=0)") +
+  scale_fill_manual(
+    values = my_palette
+  ) +
+  scale_color_manual(
+    values = my_palette
+  ) +
+  scale_shape_manual(values = rep(19, 4)) +
+  scale_size_manual(values = rep(.5, 4))
+
+# Simpson diversity (exp) curve (q=2)
+p2 <- ggiNEXT(
+  out1,
+  type = 1,
+  facet.var = "Order.q",
+  color.var = "Assemblage",
+  grey = F
+) +
+  theme_bw(base_size = 8) +
+  theme(axis.line = element_line(color = "black")) +
+  labs(x = "Number of Sites", y = "Simpson Diversity (q = 2)") +
+  scale_fill_manual(
+    values = my_palette
+  ) +
+  scale_color_manual(
+    values = my_palette
+  ) +
+  scale_shape_manual(values = rep(19, 4)) +
+  scale_size_manual(values = rep(.5, 4))
+
+(p1 + p2) +
+  plot_annotation(tag_levels = "A", tag_suffix = ")") +
+  plot_layout(guides = "collect")
+
+ggsave(
+  filename = here("figs/INext.tiff"),
+  units = "mm",
+  width = 180,
+  height = 110,
+  dpi = 300,
+  bg = "white"
+)
+```
+
+# Principal Component Analysis (PCA) for physiognomy
+
+```{r}
+# Hellinger transformation
+w_hell <- w_matrix %>%
+  decostand(., method = "hell")
+
+pca <- prcomp(w_hell, scale = F)
+
+p <- factoextra::fviz_pca_biplot(
+  pca,
+  geom.var = "point",
+  geom.ind = "point",
+  labelsize = 1,
+  col.ind = e_matrix$Flo_type,
+  fill.ind = e_matrix$Flo_type,
+  addEllipses = T,
+  ellipse.type = "convex",
+  conf.level = .95,
+  mean.point = F,
+  pointsize = 1.5,
+  pointshape = 22,
+  palette = my_palette,
+  legend.title = "Physiognomies",
+  alpha.var = .5,
+  fill.var = "gray40",
+  col.var = "gray40"
+) +
+  theme_bw(base_size = 8) +
+  geom_text(
+    x = -.1,
+    y = .11,
+    label = "Anemia phyllitidis",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  ) +
+  geom_text(
+    x = -.1,
+    y = .12,
+    label = "Goniopteris scabra",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  ) +
+  geom_text(
+    x = .28,
+    y = .05,
+    label = "Neoblechnum brasiliense",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  ) +
+  geom_text(
+    x = -.2,
+    y = .1,
+    label = "Ctenitis submarginalis",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  ) +
+  geom_text(
+    x = -.1,
+    y = -.22,
+    label = "Ruhmora adiantiformis",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  ) +
+  geom_text(
+    x = -.1,
+    y = -.20,
+    label = "Blechnum auriculatum",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  ) +
+  geom_text(
+    x = -.05,
+    y = -.09,
+    label = "Adiantopsis perfasciculata",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  ) +
+  geom_text(
+    x = -.09,
+    y = -.05,
+    label = "Asplenium claussenii",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  ) +
+  geom_text(
+    x = .17,
+    y = .02,
+    label = "Pecluma paradisae",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  ) +
+  geom_text(
+    x = .15,
+    y = -.01,
+    label = "Asplenium serra",
+    fontface = "italic",
+    family = "sans",
+    size = 1.5
+  )
+p
+
+ggsave(
+  plot = p,
+  here("figs/comm_pca.jpg"),
+  dpi = 600,
+  width = 180,
+  height = 100,
+  bg = "white",
+  units = "mm"
+)
+ggsave(
+  plot = p,
+  here("figs/comm_pca.tiff"),
+  dpi = 600,
+  width = 180,
+  height = 100,
+  bg = "white",
+  units = "mm"
+)
+```
+
+# PERMANOVA analisys for physiognomy
+
+```{r}
+## Permanova execution
+(perm_comm <- adonis2(
+  w_hell ~ e_matrix$Flo_type,
+  method = 'euc'
+))
+
+## Assumptions check
+(bt_disper <- betadisper(dist(w_hell), e_matrix$Flo_type) %>%
+  permutest)
+
+## Parwise permanova
+# devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+par_comm <- pairwiseAdonis::pairwise.adonis(
+  w_hell,
+  e_matrix$Flo_type,
+  perm = 9999,
+  p.adjust.m = "holm"
+)
+par_comm
+
+openxlsx::write.xlsx(
+  list(adonis = perm_comm, parw = par_comm),
+  file = here("outputs/flo_type_aov.xlsx")
+)
+```

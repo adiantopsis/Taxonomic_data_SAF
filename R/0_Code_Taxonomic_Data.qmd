@@ -1,0 +1,147 @@
+---
+title: R Code for Drivers of terrestrial ferns’ taxonomic diversity and species composition across Subtropical Atlantic Forest physiognomies - Taxonomic patterns in dataset (extension)
+author: Denilson da Silva Machado
+date: "`r Sys.Date()`"
+bibliography: /home/denilsonmachado/Bibliografia/library.bib # Bibliografia para citações
+fontsize: 12pt           # Tamanho da fonte para PDF/Word
+geometry: a4paper        # Formato de papel para PDF
+output-file: output.pdf  # Nome do arquivo gerado
+lang: "pt-BR"            # Idioma do documento
+---
+
+# Packages
+
+```{r}
+#| message: false
+#| warning: false
+library(here)
+library(openxlsx)
+library(florabr)
+library(readxl)
+library(reshape)
+library(reshape2)
+library(tidyverse)
+```
+
+# Load data
+
+```{r}
+#| message: false
+w_matrix <- read_xlsx(here("data/data_ferns.xlsx"), sheet = "w_matrix") |>
+  arrange(site) |>
+  acast(formula = site ~ taxa, value.var = "FA_New", sum)
+
+# Load reflora data
+# flora <- get_florabr(output_dir = "~/Documents/")
+flora <- load_florabr(data_dir = "~/Documents/")
+```
+
+# Binomials correction
+
+```{r}
+# Species from data
+spp <- colnames(w_matrix)
+
+# Checking species binomials
+a <- check_names(spp, data = flora)
+view(a)
+
+# Keep only accepted names
+my_spp <- a |> distinct(input_name, .keep_all = T)
+my_data <- filter(my_spp, input_name %in% spp)
+view(my_data)
+```
+
+# Elaborating frequency table
+
+```{r}
+
+d <- apply(w_matrix, 2, FUN = function(x) {
+  d <- cbind.data.frame(sum = sum(x), mean = mean(x), nsite = length(x[x > 0]))
+  return(d)
+})
+
+df_concatenado <- do.call(
+  rbind,
+  lapply(names(d), function(nome) {
+    cbind(input_name = nome, d[[nome]])
+  })
+)
+
+df_final <- merge(
+  cbind(Family = my_data$family, input_name = my_data$input_name),
+  df_concatenado,
+  by = "input_name"
+) |>
+  arrange(desc(nsite))
+
+# Singletons
+dim(df_final[df_final$nsite == 1, ])
+# Doubletons
+dim(df_final[df_final$nsite == 2, ])
+
+write.xlsx(df_final, file = here("outputs/summary_freq.xlsx"))
+```
+
+# Family Richness
+
+```{r}
+df_fam <- group_by(df_final, Family) |>
+  summarise(N = n()) |>
+  arrange(desc(N)) |>
+  mutate(perc = proportions(N) * 100)
+
+head(df_fam)
+dim(df_fam)
+sum(df_fam$N)
+
+# Plot
+ggplot(df_fam, aes(x = reorder(Family, -N), y = N)) +
+  geom_bar(stat = "identity", col = "gray70", fill = "#6DF483", alpha = 1) +
+  theme_bw(base_size = 12) +
+  theme(
+    axis.text = element_text(colour = "black"),
+    axis.title = element_text(colour = "gray10", face = "bold"),
+    axis.text.x = element_text(
+      colour = "black",
+      size = 12,
+      angle = 90,
+      face = "italic"
+    )
+  ) +
+  labs(x = "Family", y = "Richness")
+
+#Save graph
+ggsave(
+  here("figs/fam_graph.tiff"),
+  dpi = 300,
+  width = 180,
+  height = 100,
+  units = "mm"
+)
+```
+
+# Southern Brazil Terrestrial Ferns Totals
+
+```{r}
+view(flora)
+br_ferns <- filter(
+  flora,
+  grepl("Ferns", group) &
+    grepl("RS|SC|PR", states) &
+    grepl("Accepted", taxonomicStatus) &
+    grepl("Species", taxonRank) &
+    grepl("Terrestrial", habitat)
+)
+
+view(br_ferns)
+length(br_ferns$species) #415 terrestrial ferns
+
+## Get family richness at Southern
+df_all_ferns <- group_by(br_ferns, family) |>
+  summarise(N = n()) |>
+  arrange(desc(N)) |>
+  mutate(perc = proportions(N) * 100)
+
+head(df_all_ferns)
+```

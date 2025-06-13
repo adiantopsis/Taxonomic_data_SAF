@@ -1,0 +1,762 @@
+---
+title: R Code for Drivers of terrestrial ferns’ taxonomic diversity and species composition across Subtropical Atlantic Forest physiognomies - Drivers of taxonomic diversity and composition (Question 2)
+author: Denilson da Silva Machado
+date: "`r Sys.Date()`"
+knitr:
+  opts_chunk:
+    root.dir: ./
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Packages required
+
+```{r}
+#| message: false
+#| warning: false
+options(scipen = 999999)
+library(here)
+library(jtools)
+library(adespatial)
+library(performance)
+library(vegan)
+library(adiv)
+library(SYNCSA)
+library(reshape2)
+library(readxl)
+library(tidyverse)
+library(ggordiplots)
+library(Hmisc)
+library(patchwork)
+library(sjPlot)
+library(ggord)
+library(DHARMa)
+library(iNEXT)
+library(SoDA)
+library(skimr)
+```
+
+# Load data
+
+```{r}
+e_matrix <- read_xlsx(path = here("data/data_ferns.xlsx"), sheet = 2) %>%
+  arrange(site)
+
+w_matrix <- read_xlsx(here("data/data_ferns.xlsx"), sheet = "w_matrix") |>
+  arrange(site) |>
+  acast(formula = site ~ taxa, value.var = "FA_New", sum)
+
+coords <- data.frame(longitude = e_matrix$Long, latitude = e_matrix$Lat) %>%
+  `rownames<-`(e_matrix$site)
+```
+
+## Create variables and adjusting variables
+
+```{r}
+space <- cbind.data.frame(
+  Y = coords[, "latitude"],
+  X = coords[, "longitude"]
+) %>%
+  as.data.frame()
+soil <- cbind.data.frame(
+  CEC = e_matrix$cec,
+  C = e_matrix$clay,
+  N = e_matrix$nitrogen
+)
+clime <- cbind.data.frame(
+  AP = e_matrix$ann_prec,
+  PS = e_matrix$prec_seas,
+  MT = e_matrix$max_temp_wam
+)
+sample <- cbind.data.frame(
+  plot_size = e_matrix$plot_size,
+  total_size = e_matrix$samp_size / 10000
+)
+env <- cbind.data.frame(
+  soil,
+  clime,
+  space,
+  sample
+) %>%
+  `rownames<-`(e_matrix$site)
+
+# Organizing data
+data <- organize.syncsa(comm = w_matrix, envir = env)
+
+# Summary of data
+summ_env <- skim(env) |>
+  as.data.frame()
+openxlsx::write.xlsx(summ_env, here("outputs/predict_summ.xlsx"))
+```
+
+## Correlation plot
+
+```{r}
+# Evaluating predictors correlation
+c <- Hmisc::rcorr(as.matrix(cbind(data$environmental)))
+c$P[is.na(c$P)] <- 0
+tiff(
+  filename = here("figs/correl_vars.tiff"),
+  units = "mm",
+  width = 170,
+  height = 120,
+  res = 300
+)
+corrplot::corrplot(
+  c$r,
+  p.mat = c$P,
+  sig.level = 0.05,
+  tl.cex = .8,
+  type = "upper",
+  insig = "blank",
+  method = "circle",
+  number.font = 1,
+  addCoef.col = T,
+  number.cex = .8,
+  order = "original",
+  addgrid.col = T
+)
+dev.off()
+```
+
+# Taxonomic Diversity
+
+```{r}
+#Evaluating taxonomic diversity
+tax_div <- adiv::speciesdiv(
+  w_matrix,
+  method = c("richness", "Shannon", "Simpson")
+)
+# Data behavior
+summary(tax_div[, "Simpson"])
+summary(tax_div[, "richness"])
+
+boxplot(tax_div[, "Simpson"] ~ e_matrix$Flo_type)
+boxplot(tax_div[, "richness"] ~ e_matrix$Flo_type)
+```
+
+# Linear models
+
+```{r}
+## Elaborating df
+(diversity_df <- cbind.data.frame(
+  Diversity = (tax_div[, "Simpson"]),
+  Richness = (tax_div[, "richness"]),
+  data$environmental,
+  flo_type = as.factor(e_matrix$Flo_type)
+))
+
+#Summary taxonomic diversity by physiognomy
+(diversity_summ <- diversity_df %>%
+  group_by(flo_type) %>%
+  summarise(
+    n = n(),
+    sd_sample_size = sd(total_size),
+    mean_sample_size = mean(total_size),
+    mean_Diversity = mean(Diversity, na.rm = F),
+    sd_Diversity = sd(Diversity),
+    mean_Richness = mean(Richness, na.rm = F),
+    sd_Richness = sd(Richness)
+  ) |>
+  as.data.frame())
+```
+
+## Diversity models
+
+```{r}
+#| warning: false
+names = c(
+  "Diversity ~ AP*PS",
+  "Diversity  ~ AP+PS",
+  "Diversity  ~ PS",
+  "Diversity  ~ AP",
+  "Diversity ~ MT",
+  "Diversity  ~ MT*AP",
+  "Diversity ~ X",
+  "Diversity  ~ Y",
+  "Diversity  ~ C",
+  "Diversity  ~ N",
+  "Diversity  ~ CEC",
+  "Diversity  ~ C*CEC",
+  "Diversity ~ MT+AP",
+  "Diversity ~ C+CEC",
+  "Diversity ~ 1"
+)
+## Elaborating models
+mod_1 <- lm(Diversity ~ AP * PS + total_size + plot_size, data = diversity_df)
+mod_2 <- lm(Diversity ~ AP + PS + total_size + plot_size, data = diversity_df)
+mod_3 <- lm(Diversity ~ PS + total_size + plot_size, data = diversity_df)
+mod_4 <- lm(Diversity ~ AP + total_size + plot_size, data = diversity_df)
+mod_5 <- lm(Diversity ~ MT + total_size + plot_size, data = diversity_df)
+mod_6 <- lm(Diversity ~ MT * AP + total_size + plot_size, data = diversity_df)
+mod_7 <- lm(Diversity ~ X + total_size + plot_size, data = diversity_df)
+mod_8 <- lm(Diversity ~ Y + total_size + plot_size, data = diversity_df)
+mod_9 <- lm(Diversity ~ C + total_size + plot_size, data = diversity_df)
+mod_10 <- lm(Diversity ~ N + total_size + plot_size, data = diversity_df)
+mod_11 <- lm(Diversity ~ CEC + total_size + plot_size, data = diversity_df)
+mod_12 <- lm(Diversity ~ C * CEC + total_size + plot_size, data = diversity_df)
+mod_13 <- lm(Diversity ~ MT + AP + total_size + plot_size, data = diversity_df)
+mod_14 <- lm(Diversity ~ C + CEC + total_size + plot_size, data = diversity_df)
+mod_15 <- lm(Diversity ~ 1, data = diversity_df)
+
+## Selecting models via AIC
+sel_div <- bbmle::AICtab(
+  mod_1,
+  mod_2,
+  mod_3,
+  mod_4,
+  mod_5,
+  mod_6,
+  mod_7,
+  mod_8,
+  mod_9,
+  mod_10,
+  mod_11,
+  mod_12,
+  mod_13,
+  mod_14,
+  mod_15,
+  base = T,
+  weights = T,
+  nobs = T,
+  logLik = T,
+  mnames = names
+) %>%
+  as.data.frame()
+
+head(sel_div, 3L)
+
+
+### Checking assumptions
+DHARMa::simulateResiduals(mod_3, plot = T) #ok
+DHARMa::simulateResiduals(mod_2, plot = T) #ok
+
+div_models <- list(mod_3, mod_2)
+
+tiff(
+  filename = here("figs/model_div_residuals_ps.tiff"),
+  units = "mm",
+  width = 170,
+  height = 100,
+  res = 300
+)
+
+rmod_3 <- simulateResiduals(fittedModel = mod_3, n = 1000, plot = T)
+
+dev.off()
+
+tiff(
+  filename = here("figs/model_div_residuals_ps_ap.tiff"),
+  units = "mm",
+  width = 170,
+  height = 100,
+  res = 300
+)
+rmod_3 <- simulateResiduals(fittedModel = mod_2, n = 1000, plot = T)
+dev.off()
+
+# Spatial correlation
+testSpatialAutocorrelation(mod_3, x = space$X, y = space$Y)
+testSpatialAutocorrelation(mod_2, x = space$X, y = space$Y)
+
+# Plotting selected model
+effects_PS <- effects::effect(term = "PS", mod = div_models[[1]])
+x_PS <- as.data.frame(effects_PS)
+r2(div_models[[1]])
+
+p1 <- ggplot() +
+  geom_point(
+    data = diversity_df,
+    aes(y = Diversity, x = PS),
+    fill = "gray70",
+    size = 4,
+    alpha = .7,
+    pch = 21
+  ) +
+  geom_line(data = x_PS, aes(x = PS, y = fit), color = "black", lty = 2) +
+  geom_ribbon(
+    data = x_PS,
+    aes(x = PS, ymin = lower, ymax = upper),
+    alpha = 0.3,
+    fill = "gray70"
+  ) +
+  theme_classic(base_size = 8) +
+  labs(
+    x = "Rainfall seasonality (%CV)",
+    y = "Simpson Diversity",
+    caption = "adj. R²: 0.31"
+  )
+
+p1
+```
+
+## Richness models
+
+```{r}
+# Organizing table for richness vs. env
+(richness_df <- diversity_df)
+
+names_1 = c(
+  "Richness ~ AP*PS",
+  "Richness  ~ AP+PS",
+  "Richness  ~ PS",
+  "Richness  ~ AP",
+  "Richness ~ MT",
+  "Richness  ~ MT*AP",
+  "Richness ~ X",
+  "Richness  ~ Y",
+  "Richness  ~ C",
+  "Richness  ~ N",
+  "Richness  ~ CEC",
+  "Richness  ~ C*CEC",
+  "Richness ~ MT+AP",
+  "Richness ~ C+CEC",
+  "Richness ~ 1"
+)
+#### Elaborating models
+mod_1 <- lm(Richness ~ AP * PS + total_size + plot_size, data = richness_df)
+mod_2 <- lm(Richness ~ AP + PS + total_size + plot_size, data = richness_df)
+mod_3 <- lm(Richness ~ PS + total_size + plot_size, data = richness_df)
+mod_4 <- lm(Richness ~ AP + total_size + plot_size, data = richness_df)
+mod_5 <- lm(Richness ~ MT + total_size + plot_size, data = richness_df)
+mod_6 <- lm(Richness ~ MT * AP + total_size + plot_size, data = richness_df)
+mod_7 <- lm(Richness ~ X + total_size + plot_size, data = richness_df)
+mod_8 <- lm(Richness ~ Y + total_size + plot_size, data = richness_df)
+mod_9 <- lm(Richness ~ C + total_size + plot_size, data = richness_df)
+mod_10 <- lm(Richness ~ N + total_size + plot_size, data = richness_df)
+mod_11 <- lm(Richness ~ CEC + total_size + plot_size, data = richness_df)
+mod_12 <- lm(Richness ~ C * CEC + total_size + plot_size, data = richness_df)
+mod_13 <- lm(Richness ~ MT + AP + total_size + plot_size, data = richness_df)
+mod_14 <- lm(Richness ~ C + CEC + total_size + plot_size, data = richness_df)
+mod_15 <- lm(Richness ~ 1, data = richness_df)
+
+# Model selection with AIC
+sel_rich <- bbmle::AICtab(
+  mod_1,
+  mod_2,
+  mod_3,
+  mod_4,
+  mod_5,
+  mod_6,
+  mod_7,
+  mod_8,
+  mod_9,
+  mod_10,
+  mod_11,
+  mod_12,
+  mod_13,
+  mod_14,
+  mod_15,
+  weights = T,
+  base = T,
+  nobs = T,
+  mnames = names_1
+) %>%
+  as.data.frame()
+
+head(sel_rich, 5L) # Note AP and PS relationship
+
+## Checking assumptions
+DHARMa::simulateResiduals(fittedModel = mod_3, plot = T)
+DHARMa::simulateResiduals(fittedModel = mod_7, plot = T)
+rich_models <- list(mod_3, mod_7)
+
+tiff(
+  filename = "figs/model_rich1_residuals.tiff",
+  units = "mm",
+  width = 170,
+  height = 100,
+  res = 300
+)
+rmod_3 <- DHARMa::simulateResiduals(fittedModel = mod_3, plot = T)
+dev.off()
+
+
+tiff(
+  filename = "figs/model_rich2_residuals.tiff",
+  units = "mm",
+  width = 170,
+  height = 100,
+  res = 300
+)
+rmod_7 <- DHARMa::simulateResiduals(fittedModel = mod_7, plot = T)
+dev.off()
+
+## Ploting selected models
+effects_ps <- effects::effect(term = "PS", mod = rich_models[[1]])
+x_ps <- as.data.frame(effects_ps)
+r2(rich_models[[1]])
+
+p3 <- ggplot() +
+  geom_point(
+    data = richness_df,
+    aes(y = (Richness), x = PS),
+    fill = "gray70",
+    size = 4,
+    alpha = .7,
+    pch = 21
+  ) +
+  geom_line(data = x_ps, aes(x = PS, y = fit), color = "black", lty = 2) +
+  geom_ribbon(
+    data = x_ps,
+    aes(x = PS, ymin = lower, ymax = upper),
+    alpha = 0.3,
+    fill = "gray70",
+  ) +
+  theme_classic(base_size = 8) +
+  labs(
+    x = "Rainfall seasonality (%CV)",
+    y = "Species Richness",
+    caption = "adj. R²: 0.62"
+  )
+
+p3
+
+effects_x <- effects::effect(term = "X", mod = rich_models[[2]])
+x_x <- as.data.frame(effects_x)
+r2(rich_models[[2]])
+
+p2 <- ggplot() +
+  geom_point(
+    data = richness_df,
+    aes(y = (Richness), x = X),
+    fill = "grey70",
+    size = 4,
+    alpha = .7,
+    pch = 21
+  ) +
+  geom_line(data = x_x, aes(x = X, y = fit), color = "black", lty = 2) +
+  geom_ribbon(
+    data = x_x,
+    aes(x = X, ymin = lower, ymax = upper),
+    alpha = 0.3,
+    fill = "grey70"
+  ) +
+  theme_classic(base_size = 8) +
+  labs(
+    x = "Longitude (decimal)",
+    y = "Species Richness",
+    caption = "adj. R²: 0.62"
+  )
+
+p2
+(p1 / (p3 + p2)) + plot_annotation(tag_levels = "A", tag_suffix = ")")
+ggsave(
+  filename = here("figs/diversity_model.jpg"),
+  dpi = 300,
+  units = "mm",
+  width = 170,
+  height = 140
+)
+ggsave(
+  filename = here("figs/diversity_model.tiff"),
+  dpi = 300,
+  units = "mm",
+  width = 170,
+  height = 140
+)
+```
+
+## Exporting models coefficients
+
+```{r}
+sjPlot::tab_model(
+  div_models[[1]],
+  rich_models[[1]],
+  rich_models[[2]],
+  show.ci = F,
+  show.se = T,
+  show.stat = F,
+  show.fstat = T,
+  show.aicc = T,
+  collapse.se = T,
+  string.se = "SE",
+  show.re.var = T,
+  p.style = "stars",
+  file = here("outputs/models_results.xlsx")
+)
+
+openxlsx::write.xlsx(
+  list(sel_div, sel_rich),
+  file = here("outputs/aic_models_results.xlsx"),
+  rowNames = T
+)
+```
+
+## Spatial correlation
+
+```{r}
+# Getting Moran I from models residuals
+sp_cor_rich_1 <- testSpatialAutocorrelation(
+  rich_models[[1]],
+  x = space$X,
+  y = space$Y
+) |>
+  tidy()
+
+sp_cor_rich_2 <- testSpatialAutocorrelation(
+  rich_models[[2]],
+  x = space$X,
+  y = space$Y
+) |>
+  tidy()
+
+sp_cor_div <- testSpatialAutocorrelation(
+  div_models[[1]],
+  x = space$X,
+  y = space$Y
+) |>
+  tidy()
+
+## Creating table
+Moran_df <- bind_rows(sp_cor_div, sp_cor_rich_1, sp_cor_rich_2) |>
+  mutate(
+    stats = rep(c("observed", "expected", "sd"), 3),
+    .before = 1,
+  ) |>
+  mutate(
+    model = c(
+      rep("Richness ~ PS", 3),
+      rep("Richness ~ X", 3),
+      rep("Diversity ~ PS", 3)
+    ),
+    .before = 1
+  )
+Moran_df
+openxlsx::write.xlsx(Moran_df, here("outputs/Moran_I.xlsx"))
+```
+
+# Forward selection and RDA analysis
+
+```{r}
+# Transfoming frequency with Hellinger method
+w <- data$community %>%
+  decostand(method = "hell")
+# Environmental data
+e <- cbind.data.frame(data$environmental, flo_type = e_matrix$Flo_type)
+data$environmental
+# Full RDA model
+plot(y = data$environmental$Y, x = data$environmental$X)
+rda_data <- rda(
+  w ~
+    CEC +
+      N +
+      C +
+      AP +
+      PS +
+      MT +
+      X +
+      Y +
+      Condition(plot_size) +
+      Condition(total_size),
+  data = e
+)
+
+# Getting Rsquared threshold
+adjR2 <- RsquareAdj(rda_data)$adj.r.squared
+adjR2 # 0.16
+# Filtering data for selection
+n <- which(colnames(e) %in% c("plot_size", "total_size", "flo_type"))
+# Forward selection
+rda_fwd <- forward.sel(
+  w,
+  e[, -n],
+  alpha = .1,
+  Xscale = F,
+  Yscale = F,
+  adjR2thresh = adjR2,
+  nperm = 9999
+)
+# Adding corrected pvalue
+rda_fwd$padj <- p.adjust(rda_fwd$pvalue, method = 'holm', n = ncol(env))
+# Adding rsquared accumulated
+rda_fwd$R2Adj <- c(rda_fwd$AdjR2Cum[1], diff(rda_fwd$AdjR2Cum))
+# Final table
+tab_df(rda_fwd, file = here("outputs/forward_results.xlsx"))
+rda_fwd
+
+# Running selected variable RDA with plot and sample size as condition
+rda_sel <- rda(
+  w ~ AP + X + C + CEC + Condition(plot_size) + Condition(total_size),
+  data = e
+)
+anova.cca(
+  rda_sel,
+  permutations = how(nperm = 9999),
+  by = "axis",
+  pararell = 4
+)
+anova.cca(
+  rda_sel,
+  permutations = how(nperm = 9999),
+  by = "margin",
+  pararell = 4
+)
+RsquareAdj(rda_sel)
+rda_sel
+summary(rda_sel)
+```
+
+## RDA plot
+
+```{r}
+## Checking pallete for colorblindness
+color_pal = c("#75C165", "#A96C00", "#B0F4FA", "#8B0069")
+colorspace::swatchplot(color_pal, cvd = TRUE)
+
+ggord(
+  rda_sel,
+  grp_in = e$flo_type,
+  hull = F,
+  force = F,
+  max.overlaps = 10,
+  ellipse = F,
+  ptslab = F,
+  grp_title = "Physiognomies",
+  alpha = .9,
+  sizelab = 3,
+  xlim = c(-1, .7),
+  ylim = c(-1, .8),
+  addcol = "grey",
+  size = 3
+) +
+  theme_bw() +
+  geom_hline(yintercept = 0, linetype = "dashed", alpha = .7, color = "black") + # Linha horizontal central
+  geom_vline(xintercept = 0, linetype = "dashed", alpha = .7, color = "black") + # Linha vertical central
+  scale_fill_manual(
+    values = color_pal
+  ) +
+  scale_color_manual(
+    values = color_pal
+  ) +
+  geom_text(
+    fontface = "italic",
+    family = "sans",
+    x = -0.6,
+    y = 0.24,
+    label = "Neoblechnum brasiliense",
+    size = 2,
+    col = "gray40"
+  ) +
+  geom_text(
+    fontface = "italic",
+    family = "sans",
+    x = -0.1,
+    y = 0.3,
+    label = "Christella conspersa",
+    size = 2,
+    col = "gray40"
+  ) +
+  geom_text(
+    fontface = "italic",
+    family = "sans",
+    x = -0.06,
+    y = -0.3,
+    label = "Anemia phyllitidis",
+    size = 2,
+    col = "gray40"
+  ) +
+  geom_text(
+    fontface = "italic",
+    family = "sans",
+    x = 0.35,
+    y = 0.1,
+    label = "Ctenitis submarginalis",
+    size = 2,
+    col = "gray40"
+  ) +
+  geom_text(
+    fontface = "italic",
+    family = "sans",
+    x = -0.04,
+    y = -0.24,
+    label = "Lindsaea lancea",
+    size = 2,
+    col = "gray40"
+  ) +
+  geom_text(
+    fontface = "italic",
+    family = "sans",
+    x = 0.32,
+    y = -0.06,
+    label = "Asplenium claussenii",
+    size = 2,
+    col = "gray40"
+  ) +
+  geom_text(
+    fontface = "italic",
+    family = "sans",
+    x = -0.1,
+    y = 0.27,
+    label = "Amauropelta amambayensis",
+    size = 2,
+    col = "gray40"
+  ) +
+  geom_text(
+    fontface = "italic",
+    family = "sans",
+    x = 0.2,
+    y = 0.28,
+    label = "Didymochlaena truncatula",
+    size = 2,
+    col = "gray40"
+  ) +
+  geom_text(
+    fontface = "italic",
+    family = "sans",
+    x = -0.19,
+    y = -0.15,
+    label = "Asplenium serra",
+    size = 2,
+    col = "gray40"
+  ) +
+  labs(
+    caption = "Variance partition: \nConditioned = 14.99%\nConstrained = 22.13%\nUnconstrained = 62.88%",
+    size = 3
+  )
+
+ggsave(
+  here("figs/RDA_Vars.jpg"),
+  dpi = 300,
+  width = 170,
+  height = 150,
+  bg = "white",
+  units = "mm"
+)
+ggsave(
+  here("figs/RDA_Vars.tiff"),
+  dpi = 300,
+  width = 170,
+  height = 150,
+  bg = "white",
+  units = "mm"
+)
+e_matrix |> group_by(Flo_type) |> summarise(n = n())
+```
+
+## RDA Spatial correlation
+
+```{r}
+rda_data <- rda(w ~ AP + CEC + C + X, data = env)
+
+# Transforming coodinantes
+df_xy <- geoXY(latitude = space$Y, longitude = space$X)
+dim(df_xy)
+dist <- dist(df_xy)
+
+grain <- give.thresh(dist) #Minimal distance to keep all points connected
+sp_ext <- mso(rda_data, df_xy, permutations = 9999, grain = give.thresh(dist))
+n_class = round(1 + (3.3219 * log10(34)), 0)
+
+## Plot data
+tiff(
+  filename = here("figs/mso_rda.tif"),
+  units = "mm",
+  width = 170,
+  height = 100,
+  res = 300
+)
+msoplot(sp_ext, alpha = 0.05 / n_class, ylim = c(-.1, 0.1)) # No correlation detected
+
+dev.off()
+```
