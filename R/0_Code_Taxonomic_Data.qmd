@@ -12,6 +12,7 @@ lang: "pt-BR"            # Idioma do documento
 # Packages
 
 ```{r}
+
 #| message: false
 #| warning: false
 library(here)
@@ -21,6 +22,7 @@ library(readxl)
 library(reshape)
 library(reshape2)
 library(tidyverse)
+library(bfphyto)
 ```
 
 # Load data
@@ -30,32 +32,40 @@ library(tidyverse)
 w_matrix <- read_xlsx(here("data/data_ferns.xlsx"), sheet = "w_matrix") |>
   arrange(site) |>
   acast(formula = site ~ taxa, value.var = "FA_New", sum)
-
-# Load reflora data
-# flora <- get_florabr(output_dir = "~/Documents/")
-flora <- load_florabr(data_dir = "~/Documents/")
 ```
 
 # Binomials correction
 
 ```{r}
 # Species from data
-spp <- colnames(w_matrix)
+spp <- gsub(x = colnames(w_matrix), pattern = '_', replacement = ' ')
+length(spp)
+
+flora <- getReflora(dir = here('outputs/flora/'), simplify = T)
 
 # Checking species binomials
-a <- check_names(spp, data = flora)
-view(a)
+a <- resolveSpp(spp, flora, simplify = F)
+view(arrange(a, AcceptedName))
 
-# Keep only accepted names
-my_spp <- a |> distinct(input_name, .keep_all = T)
-my_data <- filter(my_spp, input_name %in% spp)
+my_data <- a
+view(my_data)
+
+my_data <- my_data %>%
+  mutate(
+    rm = case_when(
+      grepl('Botryp', AcceptedName) & Status == "Sinonimo" ~ 1,
+      .default = 0
+    )
+  ) %>%
+  filter(rm == 0) %>%
+  select(-rm)
+
 view(my_data)
 ```
 
 # Elaborating frequency table
 
 ```{r}
-
 d <- apply(w_matrix, 2, FUN = function(x) {
   d <- cbind.data.frame(sum = sum(x), mean = mean(x), nsite = length(x[x > 0]))
   return(d)
@@ -68,13 +78,30 @@ df_concatenado <- do.call(
   })
 )
 
+df_concatenado$input_name <- gsub(
+  x = df_concatenado$input_name,
+  replacement = ' ',
+  pattern = "_"
+)
+
 df_final <- merge(
-  cbind(Family = my_data$family, input_name = my_data$input_name),
+  data.frame(
+    Family = my_data$Family,
+    input_name = my_data$SubmittedName,
+    aceptedName = my_data$AcceptedName
+  ),
   df_concatenado,
-  by = "input_name"
+  by = "input_name",
+  all.y = T
 ) |>
   arrange(desc(nsite))
 
+
+View(df_final)
+unique(df_final$aceptedName)
+
+
+dim(df_final2)
 # Singletons
 dim(df_final[df_final$nsite == 1, ])
 # Doubletons

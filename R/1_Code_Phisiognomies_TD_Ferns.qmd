@@ -9,6 +9,7 @@ output-file: output.pdf  # Nome do arquivo gerado
 lang: "pt-BR"            # Idioma do documento
 ---
 
+
 # Packages required
 
 ```{r}
@@ -27,6 +28,10 @@ library(ggord)
 library(DHARMa)
 library(iNEXT)
 library(ade4)
+require(factoextra)
+# install.packages('factoextra')
+# devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+library(pairwiseAdonis)
 ```
 
 # Loading data
@@ -44,7 +49,7 @@ w_matrix <- read_xlsx(here("data/data_ferns.xlsx"), sheet = "w_matrix") |>
 coords <- data.frame(x = e_matrix$Long, y = e_matrix$Lat) %>%
   `rownames<-`(e_matrix$site)
 
-my_palette = c("#75C165", "#A96C00", "#B0F4FA", "#8B0069")
+my_palette = c("#75C165", "#A96C00", "#02e7fa", "#8B0069")
 ```
 
 # INEXT
@@ -142,7 +147,7 @@ p2 <- ggiNEXT(
   plot_layout(guides = "collect")
 
 ggsave(
-  filename = here("figs/INext.tiff"),
+  filename = here("figs/INext2.tiff"),
   units = "mm",
   width = 180,
   height = 110,
@@ -159,10 +164,10 @@ w_hell <- w_matrix %>%
   decostand(., method = "hell")
 
 pca <- prcomp(w_hell, scale = F)
-
+summary(pca)
 p <- factoextra::fviz_pca_biplot(
   pca,
-  geom.var = "point",
+  geom.var = "text",
   geom.ind = "point",
   labelsize = 1,
   col.ind = e_matrix$Flo_type,
@@ -179,102 +184,24 @@ p <- factoextra::fviz_pca_biplot(
   fill.var = "gray40",
   col.var = "gray40"
 ) +
-  theme_bw(base_size = 8) +
-  geom_text(
-    x = -.1,
-    y = .11,
-    label = "Anemia phyllitidis",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  ) +
-  geom_text(
-    x = -.1,
-    y = .12,
-    label = "Goniopteris scabra",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  ) +
-  geom_text(
-    x = .28,
-    y = .05,
-    label = "Neoblechnum brasiliense",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  ) +
-  geom_text(
-    x = -.2,
-    y = .1,
-    label = "Ctenitis submarginalis",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  ) +
-  geom_text(
-    x = -.1,
-    y = -.22,
-    label = "Ruhmora adiantiformis",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  ) +
-  geom_text(
-    x = -.1,
-    y = -.20,
-    label = "Blechnum auriculatum",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  ) +
-  geom_text(
-    x = -.05,
-    y = -.09,
-    label = "Adiantopsis perfasciculata",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  ) +
-  geom_text(
-    x = -.09,
-    y = -.05,
-    label = "Asplenium claussenii",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  ) +
-  geom_text(
-    x = .17,
-    y = .02,
-    label = "Pecluma paradisae",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  ) +
-  geom_text(
-    x = .15,
-    y = -.01,
-    label = "Asplenium serra",
-    fontface = "italic",
-    family = "sans",
-    size = 1.5
-  )
+  theme_bw(base_size = 8)
+
 p
 
 ggsave(
   plot = p,
-  here("figs/comm_pca.jpg"),
+  here("figs/comm_pca_names.jpg"),
   dpi = 600,
   width = 180,
   height = 100,
   bg = "white",
   units = "mm"
 )
+
 ggsave(
   plot = p,
-  here("figs/comm_pca.tiff"),
-  dpi = 600,
+  here("figs/comm_pca_ajustado.tiff"),
+  dpi = 300,
   width = 180,
   height = 100,
   bg = "white",
@@ -307,6 +234,6 @@ par_comm
 
 openxlsx::write.xlsx(
   list(adonis = perm_comm, parw = par_comm),
-  file = here("outputs/flo_type_aov.xlsx")
+  file = here("outputs/flo_type_aov_ajustado.xlsx")
 )
 ```

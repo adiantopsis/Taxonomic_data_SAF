@@ -15,33 +15,35 @@ editor_options:
 #| message: false
 #| warning: false
 options(scipen = 999999)
+# citation('soilDB')
 library(here)
 library(jtools)
 library(adespatial)
-library(performance)
 library(vegan)
 library(adiv)
 library(SYNCSA)
 library(reshape2)
 library(readxl)
 library(tidyverse)
-library(ggordiplots)
 library(Hmisc)
 library(patchwork)
-library(sjPlot)
 library(ggord)
 library(DHARMa)
 library(iNEXT)
-library(SoDA)
 library(skimr)
+# install.packages('sjPlot')
 ```
 
 # Load data
 
 ```{r}
-e_matrix <- read_xlsx(path = here("data/data_ferns.xlsx"), sheet = 2) %>%
+e_matrix <- read_xlsx(
+  path = here("data/data_ferns.xlsx"),
+  sheet = "e_matrix"
+) %>%
   arrange(site)
 
+view(e_matrix)
 w_matrix <- read_xlsx(here("data/data_ferns.xlsx"), sheet = "w_matrix") |>
   arrange(site) |>
   acast(formula = site ~ taxa, value.var = "FA_New", sum)
@@ -131,8 +133,8 @@ tax_div <- adiv::speciesdiv(
 summary(tax_div[, "Simpson"])
 summary(tax_div[, "richness"])
 
-boxplot(tax_div[, "Simpson"] ~ e_matrix$Flo_type)
-boxplot(tax_div[, "richness"] ~ e_matrix$Flo_type)
+# boxplot(tax_div[, "Simpson"] ~ e_matrix$Flo_type)
+# boxplot(tax_div[, "richness"] ~ e_matrix$Flo_type)
 ```
 
 # Linear models
@@ -159,6 +161,8 @@ boxplot(tax_div[, "richness"] ~ e_matrix$Flo_type)
     sd_Richness = sd(Richness)
   ) |>
   as.data.frame())
+
+openxlsx::write.xlsx(diversity_summ, file = "outputs/div_summary.xlsx")
 ```
 
 ## Diversity models
@@ -234,7 +238,7 @@ DHARMa::simulateResiduals(mod_2, plot = T) #ok
 div_models <- list(mod_3, mod_2)
 
 tiff(
-  filename = here("figs/model_div_residuals_ps.tiff"),
+  filename = here("figs/model_div_residuals_ps_rev.tiff"),
   units = "mm",
   width = 170,
   height = 100,
@@ -246,7 +250,7 @@ rmod_3 <- simulateResiduals(fittedModel = mod_3, n = 1000, plot = T)
 dev.off()
 
 tiff(
-  filename = here("figs/model_div_residuals_ps_ap.tiff"),
+  filename = here("figs/model_div_residuals_ps_ap_rev.tiff"),
   units = "mm",
   width = 170,
   height = 100,
@@ -256,13 +260,14 @@ rmod_3 <- simulateResiduals(fittedModel = mod_2, n = 1000, plot = T)
 dev.off()
 
 # Spatial correlation
-testSpatialAutocorrelation(mod_3, x = space$X, y = space$Y)
-testSpatialAutocorrelation(mod_2, x = space$X, y = space$Y)
+DHARMa::testSpatialAutocorrelation(mod_3, x = space$X, y = space$Y)
+DHARMa::testSpatialAutocorrelation(mod_2, x = space$X, y = space$Y)
+
 
 # Plotting selected model
 effects_PS <- effects::effect(term = "PS", mod = div_models[[1]])
 x_PS <- as.data.frame(effects_PS)
-r2(div_models[[1]])
+RsquareAdj(div_models[[1]])
 
 p1 <- ggplot() +
   geom_point(
@@ -362,7 +367,7 @@ DHARMa::simulateResiduals(fittedModel = mod_7, plot = T)
 rich_models <- list(mod_3, mod_7)
 
 tiff(
-  filename = "figs/model_rich1_residuals.tiff",
+  filename = "figs/model_rich1_res_ps.tiff",
   units = "mm",
   width = 170,
   height = 100,
@@ -373,7 +378,7 @@ dev.off()
 
 
 tiff(
-  filename = "figs/model_rich2_residuals.tiff",
+  filename = "figs/model_rich2_residuals_long.tiff",
   units = "mm",
   width = 170,
   height = 100,
@@ -385,7 +390,7 @@ dev.off()
 ## Ploting selected models
 effects_ps <- effects::effect(term = "PS", mod = rich_models[[1]])
 x_ps <- as.data.frame(effects_ps)
-r2(rich_models[[1]])
+RsquareAdj(rich_models[[1]])
 
 p3 <- ggplot() +
   geom_point(
@@ -414,7 +419,7 @@ p3
 
 effects_x <- effects::effect(term = "X", mod = rich_models[[2]])
 x_x <- as.data.frame(effects_x)
-r2(rich_models[[2]])
+RsquareAdj(rich_models[[2]])
 
 p2 <- ggplot() +
   geom_point(
@@ -442,14 +447,14 @@ p2 <- ggplot() +
 p2
 (p1 / (p3 + p2)) + plot_annotation(tag_levels = "A", tag_suffix = ")")
 ggsave(
-  filename = here("figs/diversity_model.jpg"),
+  filename = here("figs/diversity_model_REV.jpg"),
   dpi = 300,
   units = "mm",
   width = 170,
   height = 140
 )
 ggsave(
-  filename = here("figs/diversity_model.tiff"),
+  filename = here("figs/diversity_model_REV.tiff"),
   dpi = 300,
   units = "mm",
   width = 170,
@@ -476,6 +481,8 @@ sjPlot::tab_model(
   file = here("outputs/models_results.xlsx")
 )
 
+
+summary(rich_models[[1]])
 openxlsx::write.xlsx(
   list(sel_div, sel_rich),
   file = here("outputs/aic_models_results.xlsx"),
@@ -554,7 +561,7 @@ rda_data <- rda(
 
 # Getting Rsquared threshold
 adjR2 <- RsquareAdj(rda_data)$adj.r.squared
-adjR2 # 0.16
+adjR2 # 0.19
 # Filtering data for selection
 n <- which(colnames(e) %in% c("plot_size", "total_size", "flo_type"))
 # Forward selection
@@ -572,7 +579,7 @@ rda_fwd$padj <- p.adjust(rda_fwd$pvalue, method = 'holm', n = ncol(env))
 # Adding rsquared accumulated
 rda_fwd$R2Adj <- c(rda_fwd$AdjR2Cum[1], diff(rda_fwd$AdjR2Cum))
 # Final table
-tab_df(rda_fwd, file = here("outputs/forward_results.xlsx"))
+sjPlot::tab_df(rda_fwd, file = here("outputs/forward_results.xlsx"), digits = 4)
 rda_fwd
 
 # Running selected variable RDA with plot and sample size as condition
@@ -586,11 +593,17 @@ anova.cca(
   by = "axis",
   pararell = 4
 )
-anova.cca(
+mod_rda <- anova.cca(
   rda_sel,
   permutations = how(nperm = 9999),
   by = "margin",
   pararell = 4
+)
+sjPlot::tab_df(
+  mod_rda,
+  show.rownames = T,
+  file = here("outputs/RDA_results.xlsx"),
+  digits = 4
 )
 RsquareAdj(rda_sel)
 rda_sel
@@ -601,7 +614,7 @@ summary(rda_sel)
 
 ```{r}
 ## Checking pallete for colorblindness
-color_pal = c("#75C165", "#A96C00", "#B0F4FA", "#8B0069")
+color_pal = c("#75C165", "#A96C00", "#02e7fa", "#8B0069")
 colorspace::swatchplot(color_pal, cvd = TRUE)
 
 ggord(
@@ -629,94 +642,13 @@ ggord(
   scale_color_manual(
     values = color_pal
   ) +
-  geom_text(
-    fontface = "italic",
-    family = "sans",
-    x = -0.6,
-    y = 0.24,
-    label = "Neoblechnum brasiliense",
-    size = 2,
-    col = "gray40"
-  ) +
-  geom_text(
-    fontface = "italic",
-    family = "sans",
-    x = -0.1,
-    y = 0.3,
-    label = "Christella conspersa",
-    size = 2,
-    col = "gray40"
-  ) +
-  geom_text(
-    fontface = "italic",
-    family = "sans",
-    x = -0.06,
-    y = -0.3,
-    label = "Anemia phyllitidis",
-    size = 2,
-    col = "gray40"
-  ) +
-  geom_text(
-    fontface = "italic",
-    family = "sans",
-    x = 0.35,
-    y = 0.1,
-    label = "Ctenitis submarginalis",
-    size = 2,
-    col = "gray40"
-  ) +
-  geom_text(
-    fontface = "italic",
-    family = "sans",
-    x = -0.04,
-    y = -0.24,
-    label = "Lindsaea lancea",
-    size = 2,
-    col = "gray40"
-  ) +
-  geom_text(
-    fontface = "italic",
-    family = "sans",
-    x = 0.32,
-    y = -0.06,
-    label = "Asplenium claussenii",
-    size = 2,
-    col = "gray40"
-  ) +
-  geom_text(
-    fontface = "italic",
-    family = "sans",
-    x = -0.1,
-    y = 0.27,
-    label = "Amauropelta amambayensis",
-    size = 2,
-    col = "gray40"
-  ) +
-  geom_text(
-    fontface = "italic",
-    family = "sans",
-    x = 0.2,
-    y = 0.28,
-    label = "Didymochlaena truncatula",
-    size = 2,
-    col = "gray40"
-  ) +
-  geom_text(
-    fontface = "italic",
-    family = "sans",
-    x = -0.19,
-    y = -0.15,
-    label = "Asplenium serra",
-    size = 2,
-    col = "gray40"
-  ) +
   labs(
-    caption = "Variance partition: \nConditioned = 14.99%\nConstrained = 22.13%\nUnconstrained = 62.88%",
+    caption = "Variance partition: \nConditioned = 15%\nConstrained = 21.7%\nUnconstrained = 63.27%",
     size = 3
   )
 
 ggsave(
-  here("figs/RDA_Vars.jpg"),
+  here("figs/RDA_Vars_NAMES.jpg"),
   dpi = 300,
   width = 170,
   height = 150,
@@ -724,7 +656,7 @@ ggsave(
   units = "mm"
 )
 ggsave(
-  here("figs/RDA_Vars.tiff"),
+  here("figs/RDA_Vars2.tiff"),
   dpi = 300,
   width = 170,
   height = 150,
@@ -753,10 +685,10 @@ tiff(
   filename = here("figs/mso_rda.tif"),
   units = "mm",
   width = 170,
-  height = 100,
+  height = 150,
   res = 300
 )
-msoplot(sp_ext, alpha = 0.05 / n_class, ylim = c(-.1, 0.1)) # No correlation detected
+msoplot(sp_ext, alpha = 0.05 / n_class, ylim = c(-.2, 0.2)) # No correlation detected
 
 dev.off()
 ```
