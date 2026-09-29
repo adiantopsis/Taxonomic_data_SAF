@@ -1,0 +1,19 @@
+cff-version: 1.1.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: Machado
+  given-names: Denilson da Silva
+- family-names: Gonzatti
+  given-names: Felipe
+- family-names: Duarte
+  given-names: Leandro
+- family-names: Seger
+  given-names: Guilherme Dubal dos Santos
+orcid: https://orcid.org/0000-0001-7027-1269
+orcid: https://orcid.org/0000-0003-1971-0558
+orcid: https://orcid.org/0000-0003-1771-0407
+orcid: https://orcid.org/0000-0002-0710-3550
+title: The central role of soil in shaping terrestrial ferns’ assemblage composition, but not taxonomic diversity, in subtropical Atlantic forests
+version: 1.0
+date-released: 2026-09-29
+                                
